@@ -6,6 +6,8 @@
 <title>NextMove</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -285,20 +287,43 @@ const M={gezi:{icon:'🗺️',label:'Gezilecek Yer',dot:'#6B9FD4'},yemek:{icon:'
 let me={name:'',av:''}, ac='gezi', D={gezi:[],yemek:[],konaklama:[],aktivite:[]};
 let _map=null, _markers=[], tT;
 
-async function ld(){try{const r=await window.storage.get('eu3',true);if(r&&r.value)D=JSON.parse(r.value);}catch(e){}}
-async function ps(){try{await window.storage.set('eu3',JSON.stringify(D),true);}catch(e){}}
-async function syncO(){
+// ── FIREBASE ──
+const fbApp = firebase.initializeApp({
+  apiKey: "AIzaSyDpoYPt_-4huUgC1eTU44A19EpnOeWxGzU",
+  databaseURL: "https://nextmove-1-13e31-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "nextmove-1-13e31"
+});
+const db = firebase.database();
+
+async function ld(){
   try{
-    const r=await window.storage.get('eu-on',true);
-    let u=r?JSON.parse(r.value):[];
-    const now=Date.now();
-    u=u.filter(x=>x.name!==me.name&&now-x.ts<90000);
-    u.push({name:me.name,av:me.av,ts:now});
-    await window.storage.set('eu-on',JSON.stringify(u),true);
+    const snap = await db.ref('data').get();
+    if(snap.exists()) D = snap.val();
+  }catch(e){ console.log('ld error',e); }
+}
+async function ps(){
+  try{ await db.ref('data').set(D); }catch(e){ console.log('ps error',e); }
+}
+
+function startRealtimeSync(){
+  db.ref('data').on('value', snap => {
+    if(snap.exists()){
+      D = snap.val();
+      ra();
+    }
+  });
+  db.ref('online').on('value', snap => {
+    if(!snap.exists()) return;
+    const u = Object.values(snap.val()||{}).filter(x=>Date.now()-x.ts<90000);
     const bar=document.getElementById('obar');
     bar.innerHTML='<span class="olabel">Çevrimiçi:</span>';
     u.forEach(x=>{const d=document.createElement('div');d.className='odot';d.title=x.name;d.textContent=x.av;bar.appendChild(d);});
     const l=document.createElement('span');l.className='onames';l.textContent=u.map(x=>x.name).join(', ');bar.appendChild(l);
+  });
+}
+async function syncO(){
+  try{
+    await db.ref('online/'+me.name).set({name:me.name,av:me.av,ts:Date.now()});
   }catch(e){}
 }
 
@@ -326,8 +351,9 @@ function checkPw(){
       document.getElementById('hav').textContent=me.av;
       document.getElementById('hname').textContent=me.name;
       document.getElementById('app').classList.add('ready');
-      ld().then(()=>{ra();syncO();});ldYol();
-      setInterval(()=>{ld().then(ra);syncO();},7000);
+      ld().then(()=>{ra();syncO();startRealtimeSync();});
+      ldYol();
+      setInterval(syncO,30000);
     },400);
   },2000);
 }
@@ -465,8 +491,21 @@ document.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&document.getElemen
 // ── YOL HARİTASI ──
 let Dyol=[];
 
-async function ldYol(){try{const r=await window.storage.get('eu-yol',true);if(r&&r.value)Dyol=JSON.parse(r.value);}catch(e){}}
-async function psYol(){try{await window.storage.set('eu-yol',JSON.stringify(Dyol),true);}catch(e){}}
+async function ldYol(){
+  try{
+    const snap=await db.ref('yol').get();
+    if(snap.exists()) Dyol=snap.val();
+  }catch(e){}
+  renderYol();
+  // realtime sync for yol
+  db.ref('yol').on('value',snap=>{
+    if(snap.exists()) Dyol=snap.val(); else Dyol=[];
+    renderYol();
+  });
+}
+async function psYol(){
+  try{ await db.ref('yol').set(Dyol); }catch(e){}
+}
 
 function renderYol(){
   const el=document.getElementById('yol-list');
