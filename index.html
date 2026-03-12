@@ -289,11 +289,20 @@ let _map=null, _markers=[], tT;
 // ── FIREBASE REST API ──
 const FB_URL = "https://nextmove-1-13e31-default-rtdb.europe-west1.firebasedatabase.app";
 
+function fixD(val){
+  // Firebase turns arrays into objects with numeric keys - convert back
+  if(!val) return;
+  ['gezi','yemek','konaklama','aktivite'].forEach(c=>{
+    if(!val[c]) val[c]=[];
+    else if(!Array.isArray(val[c])) val[c]=Object.values(val[c]);
+  });
+  return val;
+}
 async function ld(){
   try{
     const r = await fetch(FB_URL+'/data.json');
     const val = await r.json();
-    if(val) D = val;
+    if(val){ const fixed=fixD(val); if(fixed) D=fixed; }
   }catch(e){ console.log('ld error',e); }
 }
 async function ps(){
@@ -308,7 +317,7 @@ function startRealtimeSync(){
     try{
       const r = await fetch(FB_URL+'/data.json');
       const val = await r.json();
-      if(val){ D=val; ra(); }
+      if(val){ const fixed=fixD(val); if(fixed){ D=fixed; ra(); } }
     }catch(e){}
   }, 5000);
   // Poll online users every 10 seconds
@@ -499,7 +508,7 @@ async function ldYol(){
   try{
     const r = await fetch(FB_URL+'/yol.json');
     const val = await r.json();
-    if(val) Dyol = val;
+    if(val) Dyol = Array.isArray(val) ? val : Object.values(val);
   }catch(e){}
   renderYol();
 }
