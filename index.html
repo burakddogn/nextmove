@@ -6,8 +6,7 @@
 <title>NextMove</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -287,43 +286,48 @@ const M={gezi:{icon:'🗺️',label:'Gezilecek Yer',dot:'#6B9FD4'},yemek:{icon:'
 let me={name:'',av:''}, ac='gezi', D={gezi:[],yemek:[],konaklama:[],aktivite:[]};
 let _map=null, _markers=[], tT;
 
-// ── FIREBASE ──
-const fbApp = firebase.initializeApp({
-  apiKey: "AIzaSyDpoYPt_-4huUgC1eTU44A19EpnOeWxGzU",
-  databaseURL: "https://nextmove-1-13e31-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "nextmove-1-13e31"
-});
-const db = firebase.database();
+// ── FIREBASE REST API ──
+const FB_URL = "https://nextmove-1-13e31-default-rtdb.europe-west1.firebasedatabase.app";
 
 async function ld(){
   try{
-    const snap = await db.ref('data').get();
-    if(snap.exists()) D = snap.val();
+    const r = await fetch(FB_URL+'/data.json');
+    const val = await r.json();
+    if(val) D = val;
   }catch(e){ console.log('ld error',e); }
 }
 async function ps(){
-  try{ await db.ref('data').set(D); }catch(e){ console.log('ps error',e); }
+  try{
+    await fetch(FB_URL+'/data.json', {method:'PUT', body:JSON.stringify(D), headers:{'Content-Type':'application/json'}});
+  }catch(e){ console.log('ps error',e); }
 }
 
 function startRealtimeSync(){
-  db.ref('data').on('value', snap => {
-    if(snap.exists()){
-      D = snap.val();
-      ra();
-    }
-  });
-  db.ref('online').on('value', snap => {
-    if(!snap.exists()) return;
-    const u = Object.values(snap.val()||{}).filter(x=>Date.now()-x.ts<90000);
-    const bar=document.getElementById('obar');
-    bar.innerHTML='<span class="olabel">Çevrimiçi:</span>';
-    u.forEach(x=>{const d=document.createElement('div');d.className='odot';d.title=x.name;d.textContent=x.av;bar.appendChild(d);});
-    const l=document.createElement('span');l.className='onames';l.textContent=u.map(x=>x.name).join(', ');bar.appendChild(l);
-  });
+  // Poll every 5 seconds for updates
+  setInterval(async()=>{
+    try{
+      const r = await fetch(FB_URL+'/data.json');
+      const val = await r.json();
+      if(val){ D=val; ra(); }
+    }catch(e){}
+  }, 5000);
+  // Poll online users every 10 seconds
+  setInterval(async()=>{
+    try{
+      const r = await fetch(FB_URL+'/online.json');
+      const val = await r.json();
+      if(!val) return;
+      const u = Object.values(val).filter(x=>Date.now()-x.ts<90000);
+      const bar=document.getElementById('obar');
+      bar.innerHTML='<span class="olabel">Çevrimiçi:</span>';
+      u.forEach(x=>{const d=document.createElement('div');d.className='odot';d.title=x.name;d.textContent=x.av;bar.appendChild(d);});
+      const l=document.createElement('span');l.className='onames';l.textContent=u.map(x=>x.name).join(', ');bar.appendChild(l);
+    }catch(e){}
+  }, 10000);
 }
 async function syncO(){
   try{
-    await db.ref('online/'+me.name).set({name:me.name,av:me.av,ts:Date.now()});
+    await fetch(FB_URL+'/online/'+me.name+'.json', {method:'PUT', body:JSON.stringify({name:me.name,av:me.av,ts:Date.now()}), headers:{'Content-Type':'application/json'}});
   }catch(e){}
 }
 
@@ -493,18 +497,16 @@ let Dyol=[];
 
 async function ldYol(){
   try{
-    const snap=await db.ref('yol').get();
-    if(snap.exists()) Dyol=snap.val();
+    const r = await fetch(FB_URL+'/yol.json');
+    const val = await r.json();
+    if(val) Dyol = val;
   }catch(e){}
   renderYol();
-  // realtime sync for yol
-  db.ref('yol').on('value',snap=>{
-    if(snap.exists()) Dyol=snap.val(); else Dyol=[];
-    renderYol();
-  });
 }
 async function psYol(){
-  try{ await db.ref('yol').set(Dyol); }catch(e){}
+  try{
+    await fetch(FB_URL+'/yol.json', {method:'PUT', body:JSON.stringify(Dyol), headers:{'Content-Type':'application/json'}});
+  }catch(e){}
 }
 
 function renderYol(){
